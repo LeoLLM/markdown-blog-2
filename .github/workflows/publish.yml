@@ -1,0 +1,90 @@
+name: Publish Markdown to HTML
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'posts/**/*.md'
+
+jobs:
+  convert:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Pandoc
+        uses: r-lib/actions/setup-pandoc@v2
+        with:
+          pandoc-version: '3.1.2'
+      
+      - name: Create output directory
+        run: mkdir -p public
+
+      - name: Convert Markdown to HTML
+        run: |
+          for file in posts/*.md; do
+            filename=$(basename "$file" .md)
+            echo "Converting $file to public/$filename.html"
+            pandoc -s "$file" -o "public/$filename.html" --metadata-file=<(echo '{"title": "Markdown Blog"}') --template=default --css=style.css
+          done
+      
+      - name: Create basic CSS
+        run: |
+          cat > public/style.css << EOL
+          body {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.6;
+          }
+          h1, h2, h3 {
+            color: #2c3e50;
+          }
+          a {
+            color: #3498db;
+            text-decoration: none;
+          }
+          a:hover {
+            text-decoration: underline;
+          }
+          EOL
+
+      - name: Create index page
+        run: |
+          echo "<!DOCTYPE html>
+          <html>
+          <head>
+            <meta charset=\"UTF-8\">
+            <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">
+            <title>Markdown Blog</title>
+            <link rel=\"stylesheet\" href=\"style.css\">
+          </head>
+          <body>
+            <h1>Markdown Blog</h1>
+            <p>A simple blog powered by markdown files and GitHub Actions.</p>
+            <h2>Posts</h2>
+            <ul>" > public/index.html
+            
+          for file in posts/*.md; do
+            filename=$(basename "$file" .md)
+            title=$(grep -m 1 "title:" "$file" | sed 's/title: *//;s/"//g')
+            date=$(grep -m 1 "date:" "$file" | sed 's/date: *//')
+            echo "  <li><a href=\"$filename.html\">$title</a> - $date</li>" >> public/index.html
+          done
+          
+          echo "</ul>
+          </body>
+          </html>" >> public/index.html
+
+      - name: Commit and push
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add public/
+          git commit -m "Generate HTML pages from markdown" || echo "No changes to commit"
+          git push
